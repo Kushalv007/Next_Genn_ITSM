@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: nextgen-itsm-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: itsm_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d itsm_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nextgen-itsm-app
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/itsm_db?schema=public
+      FRONTEND_URL: "*"
+      JWT_ACCESS_SECRET: "itsm-production-jwt-access-key-replace-in-real-prod"
+      JWT_REFRESH_SECRET: "itsm-production-jwt-refresh-key-replace-in-real-prod"
+      BCRYPT_SALT_ROUNDS: "12"
+    ports:
+      - "4000:4000"
+
+volumes:
+  postgres_data:

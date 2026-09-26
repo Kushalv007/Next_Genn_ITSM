@@ -1,0 +1,299 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-1.0.x", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Admin
+  Technician
+  User
+}
+
+enum IncidentStatus {
+  NEW
+  IN_PROGRESS
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum IncidentPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RequestStatus {
+  SUBMITTED
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ProblemStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  CLOSED
+}
+
+enum ChangeStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  IMPLEMENTATION
+  CLOSED
+  REJECTED
+}
+
+enum ChangeRisk {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AssetStatus {
+  AVAILABLE
+  ASSIGNED
+  IN_REPAIR
+  RETIRED
+}
+
+model User {
+  id            String         @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String         @unique
+  password      String
+  role          Role           @default(User)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  lastLoginAt   DateTime?
+  refreshTokens RefreshToken[]
+
+  reportedIncidents Incident[]          @relation("IncidentRequester")
+  assignedIncidents Incident[]          @relation("IncidentAssignee")
+  incidentComments  IncidentComment[]
+  submittedRequests ServiceRequest[]    @relation("RequestRequester")
+  assignedRequests  ServiceRequest[]    @relation("RequestAssignee")
+  approvedRequests  ServiceRequest[]    @relation("RequestApprover")
+  authoredArticles  KnowledgeArticle[]  @relation("ArticleAuthor")
+  notifications     Notification[]
+  ownedProblems     Problem[]           @relation("ProblemOwner")
+  ownedChanges      Change[]            @relation("ChangeOwner")
+  approvedChanges   Change[]            @relation("ChangeApprover")
+  assignedAssets    Asset[]             @relation("AssetAssignee")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  userId     String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Incident {
+  id               String           @id @default(uuid())
+  ticketNumber     String           @unique
+  shortDescription String
+  description      String
+  category         String
+  priority         IncidentPriority @default(MEDIUM)
+  status           IncidentStatus   @default(NEW)
+  requesterId      String
+  assignedToId     String?
+  resolutionNotes  String?
+  slaDeadline      DateTime?
+  slaBreached      Boolean          @default(false)
+  resolvedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  requester  User              @relation("IncidentRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  assignedTo User?             @relation("IncidentAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  problemId  String?
+  problem    Problem?          @relation(fields: [problemId], references: [id], onDelete: SetNull)
+  assetId    String?
+  asset      Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  comments   IncidentComment[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([requesterId])
+  @@index([assignedToId])
+  @@index([problemId])
+  @@index([assetId])
+}
+
+model IncidentComment {
+  id         String   @id @default(uuid())
+  incidentId String
+  userId     String
+  content    String
+  createdAt  DateTime @default(now())
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+}
+
+model ServiceCatalogItem {
+  id          String   @id @default(uuid())
+  name        String
+  description String
+  category    String
+  icon        String   @default("Package")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  requests ServiceRequest[]
+
+  @@index([category])
+  @@index([isActive])
+}
+
+model ServiceRequest {
+  id                   String         @id @default(uuid())
+  requestNumber        String         @unique
+  serviceCatalogItemId String
+  requesterId          String
+  description          String
+  status               RequestStatus  @default(SUBMITTED)
+  assignedToId         String?
+  approvalStatus       ApprovalStatus @default(PENDING)
+  approverId           String?
+  approvedAt           DateTime?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  catalogItem ServiceCatalogItem @relation(fields: [serviceCatalogItemId], references: [id], onDelete: Cascade)
+  requester   User               @relation("RequestRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  assignedTo  User?              @relation("RequestAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  approver    User?              @relation("RequestApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([approvalStatus])
+  @@index([requesterId])
+  @@index([assignedToId])
+}
+
+model KnowledgeArticle {
+  id        String        @id @default(uuid())
+  title     String
+  content   String
+  category  String
+  authorId  String
+  status    ArticleStatus @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  author User @relation("ArticleAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([category])
+  @@index([status])
+  @@index([authorId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+}
+
+model Problem {
+  id            String        @id @default(uuid())
+  problemNumber String        @unique
+  title         String
+  description   String
+  status        ProblemStatus @default(OPEN)
+  rootCause     String?
+  workaround    String?
+  ownerId       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  owner     User?      @relation("ProblemOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  incidents Incident[]
+
+  @@index([status])
+  @@index([ownerId])
+}
+
+model Change {
+  id                 String       @id @default(uuid())
+  changeNumber       String       @unique
+  title              String
+  description        String
+  risk               ChangeRisk   @default(LOW)
+  implementationPlan String
+  rollbackPlan       String
+  scheduledDate      DateTime?
+  status             ChangeStatus @default(DRAFT)
+  ownerId            String
+  approverId         String?
+  approvedAt         DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  owner    User  @relation("ChangeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  approver User? @relation("ChangeApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([risk])
+  @@index([ownerId])
+}
+
+model Asset {
+  id           String      @id @default(uuid())
+  assetTag     String      @unique
+  name         String
+  type         String
+  model        String
+  serialNumber String
+  status       AssetStatus @default(AVAILABLE)
+  assignedToId String?
+  locationId   String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  assignedTo User?      @relation("AssetAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  incidents  Incident[]
+
+  @@index([status])
+  @@index([type])
+  @@index([assignedToId])
+}
+

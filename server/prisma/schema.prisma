@@ -1,0 +1,127 @@
+// Next-Gen ITSM Platform — Prisma schema
+// Step 2: Database foundation.
+//
+// Naming:
+//   - Primary keys use UUID (cuid() is used by default; we use uuid()).
+//   - Unique constraints: User.employeeId, User.email, Role.name, Permission.name.
+//   - Timestamps are standard fields on core entities.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Reference / look-up tables
+// ---------------------------------------------------------------------------
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Location {
+  id        String   @id @default(uuid())
+  name      String   @unique
+
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Permission {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+
+  roles       RolePermission[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+/// Many-to-many between Role ↔ Permission.
+model RolePermission {
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------------------------------------------------------------------
+// Teams & membership
+// ---------------------------------------------------------------------------
+
+model Team {
+  id          String       @id @default(uuid())
+  name        String       @unique
+  description String?
+
+  members     TeamMember[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model TeamMember {
+  id     String @id @default(uuid())
+  teamId String
+  userId String
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String       @id @default(uuid())
+  employeeId   String       @unique
+  name         String
+  email        String       @unique
+  passwordHash String
+
+  departmentId String
+  roleId       String
+  locationId   String
+
+  department   Department   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleId],       references: [id], onDelete: Restrict)
+  location     Location     @relation(fields: [locationId],   references: [id], onDelete: Restrict)
+
+  teams        TeamMember[]
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([roleId])
+  @@index([departmentId])
+  @@index([locationId])
+  @@index([isActive])
+}
